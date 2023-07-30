@@ -7,7 +7,7 @@ import Html.Events exposing (onInput, onClick)
 import Html.Parser exposing (..)
 import Http
 import Parser exposing (..)
-import Tree exposing (..)
+import Tree as Tree exposing(Tree)
 
 import RemoteData exposing (..)
 
@@ -41,10 +41,10 @@ convertToTree : Node -> Tree HtmlNode
 convertToTree node =
     case node of
         Text text ->
-            tree (HtmlText text) []
+            Tree.tree (HtmlText text) []
 
         Comment comment ->
-            tree (HtmlComment comment) []
+            Tree.tree (HtmlComment comment) []
 
         Element tag attributes children ->
            let
@@ -60,7 +60,7 @@ convertToTree node =
                         _ -> Just (convertToTree child)
                     ) children
             in
-            tree (HtmlElement tag attributes) childNodes --(List.map convertToTree children)
+            Tree.tree (HtmlElement tag attributes) childNodes --(List.map convertToTree children)
 
 init : () -> (Model, Cmd Msg)
 init _ =
@@ -93,8 +93,16 @@ update msg model =
         let
             htmlTreeWebData = 
                 result 
-                |> RemoteData.map (\htmlStr -> runDocument allCharRefs htmlStr) --parse the html tree
+                |> RemoteData.map (\htmlStr -> runDocument allCharRefs (String.trimLeft htmlStr)) --parse the html tree
                 |> RemoteData.map (\document -> Result.map (\doc -> doc.root |> convertToTree) document) --convert to Tree HtmlNode
+            links = htmlTreeWebData -- Inside RemoteData a Result is wrapped the code below unpack that to Maybe (List String)
+                    |> RemoteData.toMaybe -- Maybe
+                    |> Maybe.andThen (\htmlTreeParseResult ->
+                                        htmlTreeParseResult -- Parser Result
+                                        |> Result.toMaybe  -- Maybe
+                                        |> Maybe.map (findLinks)
+                                    )
+            _ = Debug.toString links |> Debug.log "links"
         in
         ({model | htmlTreeWebData = htmlTreeWebData}, Cmd.none)
     
@@ -110,6 +118,50 @@ update msg model =
         in
         ({model | htmlTreeWebData = Success htmlTreeWebData }, Cmd.none)
 
+findLinks : Tree HtmlNode -> List String
+findLinks htmlTree =
+    let
+        transformFn = 
+            (\htmlNode -> 
+                case htmlNode of
+                    HtmlElement "a" attributes ->
+                        attributes
+                        |> List.filterMap filterMapHref
+                        |> List.head
+                    _ -> 
+                        Nothing
+            )
+    in
+    htmlTree
+    |> filterMapTree transformFn
+
+filterMapHref : (String, String) -> Maybe String
+filterMapHref (attribute,value) =
+    if "href" == attribute && value /= "" && not (String.contains "mailto" value) then
+        Just value
+    else 
+        Nothing
+
+hasHref : List (String, String) -> Bool
+hasHref attrs =
+    List.any (\(key, value) -> String.toLower key == "href") attrs
+
+filterMapTree : (a -> Maybe b) -> Tree a -> List b
+filterMapTree transform tree =
+    case transform (Tree.label tree) of
+        Just result ->
+            result :: List.concatMap (filterMapTree transform) (Tree.children tree)
+
+        Nothing ->
+            List.concatMap (filterMapTree transform) (Tree.children tree)
+
+-- Function to find all elements in the tree that match the given predicate
+filterTree : (a -> Bool) -> Tree a -> List a
+filterTree predicate tree =
+    if predicate (Tree.label tree) then
+        (Tree.label tree) :: List.concatMap (filterTree predicate) (Tree.children tree)
+    else
+        List.concatMap (filterTree predicate) (Tree.children tree)
 
 -- SUBSCRIPTIONS
 
@@ -158,14 +210,14 @@ viewHtmlTreeWebData htmlTreeWebData =
 
 viewHtmlTree htmlTree =
     htmlTree
-    |> restructure labelToHtml toListItems
+    |> Tree.restructure labelToHtml toListItems
     |> \root -> Html.ul [class ["tree"]] [ root ]
 
 labelToHtml : HtmlNode -> Html msg
 labelToHtml htmlNode =
-    let
-        _ = htmlNode |> Debug.toString |> Debug.log "htmlNode"
-    in
+    -- let
+    --     _ = htmlNode |> Debug.toString |> Debug.log "htmlNode"
+    -- in
     case htmlNode of
         HtmlText str ->
             Html.code [] [text str]
