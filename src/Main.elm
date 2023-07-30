@@ -204,7 +204,7 @@ filterMapHref ( attribute, value ) =
 
 hasHref : List ( String, String ) -> Bool
 hasHref attrs =
-    List.any (\( key, value ) -> String.toLower key == "href") attrs
+    List.any (\( key, _ ) -> String.toLower key == "href") attrs
 
 
 filterMapTree : (a -> Maybe b) -> Tree a -> List b
@@ -364,6 +364,7 @@ viewHtmlTreeWebData htmlTreeWebData =
                     div [] [ text (Debug.toString error) ]
 
 
+viewHtmlTree : Tree HtmlNode -> Html msg
 viewHtmlTree htmlTree =
     htmlTree
         |> Tree.restructure labelToHtml toListItems
