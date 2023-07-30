@@ -11,10 +11,10 @@ jobs:
     runs-on: ubuntu-latest
 
     defaults:
-      run:
+       # run:
         # Skip this and remove all references to `example` if you have
         # stuff at the repo root.
-        working-directory: example
+        #  working-directory: example
 
     steps:
       - uses: actions/checkout@v3
@@ -45,7 +45,8 @@ jobs:
         id: cache-node_modules
         uses: actions/cache@v3
         with:
-          path: example/node_modules
+          path: 
+          /node_modules
           key: node_modules-${{ hashFiles('example/package.json', 'example/package-lock.json') }}
 
       # Re-use ~/.elm between runs until elm.json, elm-tooling.json or
