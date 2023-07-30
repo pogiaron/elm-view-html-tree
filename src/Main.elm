@@ -30,6 +30,7 @@ type alias Model =
     { url: String
     , htmlStr: String
     , htmlTreeWebData: WebDataParsedHtml
+    , logo: Maybe (Tree HtmlNode)
     }
 
 type alias WebDataParsedHtml = WebData (Result (List DeadEnd) (Tree HtmlNode))
@@ -64,7 +65,7 @@ convertToTree node =
 
 init : () -> (Model, Cmd Msg)
 init _ =
-  ( { url = "", htmlTreeWebData = NotAsked, htmlStr = ""}
+  ( { url = "", htmlTreeWebData = NotAsked, htmlStr = "", logo = Nothing}
   , Cmd.none
   )
 
@@ -93,8 +94,8 @@ update msg model =
         let
             htmlTreeWebData = 
                 result 
-                |> RemoteData.map (\htmlStr -> runDocument allCharRefs (String.trimLeft htmlStr)) --parse the html tree
-                |> RemoteData.map (\document -> Result.map (\doc -> doc.root |> convertToTree) document) --convert to Tree HtmlNode
+                |> RemoteData.map (\htmlStr -> runDocument allCharRefs (String.trimLeft htmlStr)) -- parse the html tree
+                |> RemoteData.map (\document -> Result.map (\doc -> doc.root |> convertToTree) document) -- convert to Tree HtmlNode
             links = htmlTreeWebData -- Inside RemoteData a Result is wrapped the code below unpack that to Maybe (List String)
                     |> RemoteData.toMaybe -- Maybe
                     |> Maybe.andThen (\htmlTreeParseResult ->
@@ -103,8 +104,19 @@ update msg model =
                                         |> Maybe.map (findLinks)
                                     )
             _ = Debug.toString links |> Debug.log "links"
+            logoHtmlElement = htmlTreeWebData 
+                            |> RemoteData.toMaybe
+                            |> Maybe.andThen (\htmlTreeParseResult ->
+                                        htmlTreeParseResult -- Parser Result
+                                        |> Result.toMaybe  -- Maybe
+                                        |> Maybe.map (findLogoElements [])
+                                    )
+                            |> Maybe.andThen (\logoElements -> List.head logoElements)
+
+            _ = Debug.toString logoHtmlElement |> Debug.log "logo"
+            
         in
-        ({model | htmlTreeWebData = htmlTreeWebData}, Cmd.none)
+        ({model | htmlTreeWebData = htmlTreeWebData, logo = logoHtmlElement}, Cmd.none)
     
     HtmlStrChange htmlStr ->
         ({model | htmlStr = htmlStr}, Cmd.none)
@@ -163,6 +175,41 @@ filterTree predicate tree =
     else
         List.concatMap (filterTree predicate) (Tree.children tree)
 
+findLogoElements : List String -> Tree (HtmlNode) -> List (Tree HtmlNode)
+findLogoElements classAccumulator node  =
+    let
+        currentNode = Tree.label node
+        children = Tree.children node
+
+        classAccumulatorNew = (
+                    \attributes -> 
+                        let
+                            classes = List.filterMap (\( key, value ) -> if key == "class" then Just value else Nothing) attributes
+                        in
+                        classes ++ classAccumulator
+                    )
+    in
+
+    case currentNode of
+        HtmlElement "svg" attributes ->
+            if hasLogoClass (classAccumulatorNew attributes) then
+                [ node ]
+            else
+                []
+        HtmlElement "img" attributes ->
+            if hasLogoClass (classAccumulatorNew attributes) then
+                [ node ]
+            else
+                []
+        HtmlElement _ attributes ->
+            List.concatMap (findLogoElements (classAccumulatorNew attributes)) children
+        _ ->
+            []
+
+hasLogoClass : List String -> Bool
+hasLogoClass classes =
+    List.any (\c -> String.contains "logo" c) classes
+
 -- SUBSCRIPTIONS
 
 
@@ -185,14 +232,34 @@ view model =
                 [ input [onInput UrlChange] []
                 , button [onClick GetUrl] [text "View html structure"]
                 ]
-            , div []
-                [ textarea [onInput HtmlStrChange] []
-                , button [onClick ParseHtmlStr] [text "Parse and view html structure"]
-                ]
+            , div [] [( model.logo 
+                |> Maybe.map (\logoHtml -> renderHtml logoHtml) 
+                |> Maybe.withDefault (text "")
+                )]
+            -- , div []
+            --     [ textarea [onInput HtmlStrChange] []
+            --     , button [onClick ParseHtmlStr] [text "Parse and view html structure"]
+            --     ]
             , viewHtmlTreeWebData model.htmlTreeWebData
             ]
         ]
     }
+
+renderHtml : Tree HtmlNode -> Html msg
+renderHtml htmlTree =
+    let
+        currentNode = Tree.label htmlTree
+        children = Tree.children htmlTree
+    in
+    case currentNode of
+        HtmlElement tag attributes ->
+            Html.node tag 
+                (List.map (\(key, val) -> attribute key val) attributes) 
+                (List.map renderHtml children)
+        HtmlText t -> 
+            text t
+        _ ->
+            text ""
 
 viewHtmlTreeWebData : WebDataParsedHtml -> Html msg
 viewHtmlTreeWebData htmlTreeWebData =
@@ -211,13 +278,10 @@ viewHtmlTreeWebData htmlTreeWebData =
 viewHtmlTree htmlTree =
     htmlTree
     |> Tree.restructure labelToHtml toListItems
-    |> \root -> Html.ul [class ["tree"]] [ root ]
+    |> \root -> Html.ul [class "tree"] [ root ]
 
 labelToHtml : HtmlNode -> Html msg
 labelToHtml htmlNode =
-    -- let
-    --     _ = htmlNode |> Debug.toString |> Debug.log "htmlNode"
-    -- in
     case htmlNode of
         HtmlText str ->
             Html.code [] [text str]
@@ -237,9 +301,6 @@ toListItems label children =
                 [ label
                 , Html.ul [] children
                 ]
-class : List String -> Html.Attribute msg
-class classes =
-    attribute "class" (String.join " " classes)
 
 
 -- HTTP
