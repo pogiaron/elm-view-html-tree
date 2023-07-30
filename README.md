@@ -1,4 +1,4 @@
-## experimentation with the danneu/html-parser package and scraping test
+## experimentation with the danneu/html-parser package and scraping
 - Motivation: recenty I used scrapy web scraping tool written in python
 - experimentation about how Elm could be used for webscraping purposes
 - you can write a webpage into the input
