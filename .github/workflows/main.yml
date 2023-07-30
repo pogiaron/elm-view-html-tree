@@ -10,8 +10,8 @@ jobs:
   main:
     runs-on: ubuntu-latest
 
-    defaults:
-      run:
+    # defaults:
+      # run:
         # Skip this and remove all references to `example` if you have
         # stuff at the repo root.
         # working-directory: example
